@@ -1,0 +1,10 @@
+# Force LF line endings for all text files
+* text=auto eol=lf
+
+# Ensure shell scripts always use LF
+*.sh text eol=lf
+
+# Lua files
+*.lua text eol=lf
+*.toc text eol=lf
+*.xml text eol=lf

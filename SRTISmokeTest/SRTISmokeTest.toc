@@ -1,0 +1,7 @@
+## Interface: 120001
+## Title: SRTI Smoke Test
+## Notes: Smoke test for in-combat secure handler raid target marking
+## Author: taco
+## Version: 0.0.1
+
+SRTISmokeTest.lua

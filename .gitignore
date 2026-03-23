@@ -1,0 +1,39 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Editor
+.vscode/
+*.swp
+*.swo
+*~
+
+# WoW generated files
+*.bak
+
+# Packager output / release artifacts
+.release/
+release/
+*.zip
+
+# Luacheck cache
+.luacheck_cache
+
+# Generated files (regenerable via scripts)
+spell_tooltips.json
+BIGWIGS_COLOR_AUDIT.md
+
+# Personal WeakAura exports
+weakauras/
+
+# Node (if using any build tools)
+node_modules/
+
+# Wago/CurseForge packager
+.pkgmeta
+
+# Reference addons (local only, not tracked)
+examples/**
