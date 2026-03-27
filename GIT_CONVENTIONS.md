@@ -32,6 +32,7 @@ repo: Add new addon scaffold script
 | SimpleRaidTargetIcons | SRTI |
 | TankBattleText | TBT |
 | GitRaidTools | GRT |
+| RCLootCouncil_CouncilRotation | RCRC |
 
 When adding a new addon, register its abbreviation here.
 
