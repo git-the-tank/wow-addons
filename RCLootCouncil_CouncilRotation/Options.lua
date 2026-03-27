@@ -4,7 +4,7 @@ local addon = LibStub("AceAddon-3.0"):GetAddon("RCLootCouncil")
 local CR = addon:GetModule("RCCouncilRotation")
 local L = LibStub("AceLocale-3.0"):GetLocale("RCCouncilRotation")
 
-local grtLoaded = C_AddOns.IsAddOnLoaded("GitRaidTools")
+local tremove = table.remove
 
 ------ Options ------
 function CR:OptionsTable()
@@ -53,20 +53,6 @@ function CR:OptionsTable()
                                 get = function() return self.db.seats end,
                                 set = function(_, val) self.db.seats = val end,
                             },
-                            autoRotate = {
-                                order = 3,
-                                name = L["Auto-Rotate"],
-                                desc = grtLoaded and L["auto_rotate_desc"] or L["grt_not_installed"],
-                                type = "toggle",
-                                disabled = not grtLoaded,
-                                get = function() return self.db.autoRotate end,
-                                set = function(_, val)
-                                    self.db.autoRotate = val
-                                    if val then
-                                        self:ScheduleAutoRotation()
-                                    end
-                                end,
-                            },
                             rotateHeader = {
                                 order = 4,
                                 name = "",
@@ -80,8 +66,15 @@ function CR:OptionsTable()
                                 confirm = true,
                                 func = function() self:DoRotate() end,
                             },
-                            rotateCmd = {
+                            testRotate = {
                                 order = 6,
+                                name = L["Test Rotate"],
+                                desc = L["test_rotate_desc"],
+                                type = "execute",
+                                func = function() self:DoTestRotate() end,
+                            },
+                            rotateCmd = {
+                                order = 7,
                                 name = L["rotate_cmd_hint"],
                                 type = "description",
                                 fontSize = "medium",
@@ -156,14 +149,6 @@ function CR:OptionsTable()
                 order = 2,
                 type = "group",
                 args = {
-                    muteWarning = {
-                        order = 0,
-                        name = "|cFFFF4444" .. L["Mute Active"] .. "|r",
-                        desc = L["mute_active_desc"],
-                        type = "description",
-                        fontSize = "medium",
-                        hidden = function() return not CR:IsMuted() end,
-                    },
                     raidAnnounce = {
                         name = L["Raid Announcement"],
                         order = 1,
@@ -178,15 +163,11 @@ function CR:OptionsTable()
                                 get = function() return self.db.announceToRaid end,
                                 set = function(_, val) self.db.announceToRaid = val end,
                             },
-                            template = {
+                            formatDesc = {
                                 order = 2,
-                                name = L["Announcement Template"],
-                                desc = L["announce_template_desc"],
-                                type = "input",
-                                width = "full",
-                                multiline = 2,
-                                get = function() return self.db.announceTemplate end,
-                                set = function(_, val) self.db.announceTemplate = val end,
+                                name = L["announce_format_desc"],
+                                type = "description",
+                                fontSize = "medium",
                             },
                         },
                     },
@@ -243,8 +224,19 @@ function CR:OptionsTable()
                                     LibStub("AceConfigRegistry-3.0"):NotifyChange("RCLootCouncil - Council Rotation")
                                 end,
                             },
-                            resetCycle = {
+                            deleteLatest = {
                                 order = 2,
+                                name = L["Delete Latest"],
+                                desc = L["delete_latest_desc"],
+                                type = "execute",
+                                disabled = function() return #self.db.history == 0 end,
+                                func = function()
+                                    tremove(self.db.history, 1)
+                                    LibStub("AceConfigRegistry-3.0"):NotifyChange("RCLootCouncil - Council Rotation")
+                                end,
+                            },
+                            resetCycle = {
+                                order = 3,
                                 name = L["Reset Cycle"],
                                 desc = L["reset_cycle_desc"],
                                 type = "execute",
@@ -286,13 +278,33 @@ function CR:FormatHistoryText()
     end
     local lines = {}
     for _, entry in ipairs(self.db.history) do
-        local memberNames = {}
-        for _, member in ipairs(entry.members) do
-            local classColor = addon:GetClassColor(member.class)
-            local hex = classColor and ("|cFF" .. addon.Utils:RGBToHex(classColor.r, classColor.g, classColor.b)) or "|cFFFFFFFF"
-            tinsert(memberNames, hex .. member.name .. "|r")
+        local entryType = entry.type or "rotation" -- backward compat
+
+        if entryType == "cycle_reset" then
+            local reason = entry.reason == "manual" and L["manual_reset"] or L["pool_exhausted"]
+            tinsert(lines, entry.date .. "  —  " .. L["Cycle Reset"] .. " (" .. reason .. ")")
+        else
+            local memberNames = {}
+            for _, member in ipairs(entry.members or {}) do
+                local classColor = addon:GetClassColor(member.class)
+                local hex = classColor and ("|cFF" .. addon.Utils:RGBToHex(classColor.r, classColor.g, classColor.b)) or "|cFFFFFFFF"
+                tinsert(memberNames, hex .. member.name .. "|r")
+            end
+            local line = entry.date .. "  —  " .. table.concat(memberNames, ", ")
+
+            if entry.deferred and #entry.deferred > 0 then
+                local dnames = {}
+                for _, m in ipairs(entry.deferred) do tinsert(dnames, m.name) end
+                line = line .. "  |cFFFFFF00[Deferred: " .. table.concat(dnames, ", ") .. "]|r"
+            end
+            if entry.satOut and #entry.satOut > 0 then
+                local snames = {}
+                for _, m in ipairs(entry.satOut) do tinsert(snames, m.name) end
+                line = line .. "  |cFFFF4444[Sat Out: " .. table.concat(snames, ", ") .. "]|r"
+            end
+
+            tinsert(lines, line)
         end
-        tinsert(lines, entry.date .. "  —  " .. table.concat(memberNames, ", "))
     end
     return table.concat(lines, "\n")
 end

@@ -9,13 +9,9 @@ local tIndexOf = tIndexOf
 local GetNumGuildMembers, GetGuildRosterInfo = GetNumGuildMembers, GetGuildRosterInfo
 local GetNumGroupMembers, GetRaidRosterInfo = GetNumGroupMembers, GetRaidRosterInfo
 local IsInRaid, UnitIsGroupLeader = IsInRaid, UnitIsGroupLeader
-local GetGameTime, GetServerTime = GetGameTime, GetServerTime
 local SendChatMessage = SendChatMessage
 local date, time, random = date, time, math.random
 
--- Forward declarations
-local grtLoaded = C_AddOns.IsAddOnLoaded("GitRaidTools")
-local autoRotateScheduled = false
 local testMode = false
 
 function CR:OnInitialize()
@@ -28,7 +24,6 @@ function CR:OnInitialize()
             eligibleRanks = {},        -- {[rankIndex] = true} guild ranks in the pool
             permanentRanksEnabled = false, -- auto-add members of certain ranks to council
             permanentRanks = {},       -- {[rankIndex] = true} ranks always on council
-            autoRotate = false,        -- auto-rotate at raid time (requires GRT)
             announceToRaid = true,
             whisperInstructions = true,
             announceTemplate = L["default_announce"],
@@ -65,10 +60,6 @@ function CR:OnEnable()
     -- Setup options UI
     self:OptionsTable()
 
-    -- Schedule auto-rotation if GRT is loaded
-    if grtLoaded and self.db.autoRotate then
-        self:ScheduleAutoRotation()
-    end
 end
 
 function CR:OnDisable()
@@ -84,86 +75,23 @@ function CR:GUILD_ROSTER_UPDATE()
 end
 
 ---------------------------------------------------------------------------
--- Auto-Rotation (GitRaidTools integration)
+-- Slash Command Handler
 ---------------------------------------------------------------------------
-function CR:ScheduleAutoRotation()
-    if not grtLoaded or autoRotateScheduled then return end
-    if not GitRaidToolsDB then return end
-
-    local raidHour = GitRaidToolsDB.raidHour
-    local raidMinute = GitRaidToolsDB.raidMinute
-    local raidDays = GitRaidToolsDB.raidDays
-    if not raidHour or not raidDays then return end
-
-    -- Check if today is a raid day
-    local currentDay = date("*t").wday
-    local isRaidDay = false
-    for _, day in ipairs(raidDays) do
-        if day == currentDay then
-            isRaidDay = true
-            break
-        end
-    end
-    if not isRaidDay then return end
-
-    -- Calculate seconds until raid time
-    local hours, minutes = GetGameTime()
-    local currentSec = hours * 3600 + minutes * 60 + (GetServerTime() % 60)
-    local raidSec = raidHour * 3600 + (raidMinute or 0) * 60
-    local diff = raidSec - currentSec
-
-    if diff < 0 then return end -- Raid time already passed today
-
-    autoRotateScheduled = true
-    self:ScheduleTimer("OnAutoRotateFired", diff)
-end
-
-function CR:OnAutoRotateFired()
-    autoRotateScheduled = false
-    if not self.db.enabled then return end
-    if not self.db.autoRotate then return end
-
-    -- TODO: remove testMode once validated in raid
+function CR:DoTestRotate()
     testMode = true
-    addon:Print(L["rotation_auto_triggered"])
+    addon:Print(L["test_mode_on"])
     self:DoRotate()
     testMode = false
 end
 
----------------------------------------------------------------------------
--- Slash Command Handler
----------------------------------------------------------------------------
 function CR:HandleSlashCmd(arg)
     if arg == "test" then
-        testMode = true
-        addon:Print(L["test_mode_on"])
-        self:DoRotate()
-        testMode = false
-    elseif arg == "time" then
-        self:PrintTimeInfo()
+        self:DoTestRotate()
     elseif arg == "" or not arg then
         self:DoRotate()
     else
         addon:Print(format(L["unknown_arg"], arg))
     end
-end
-
-function CR:PrintTimeInfo()
-    local hours, minutes = GetGameTime()
-    local seconds = GetServerTime() % 60
-    local now = format("%02d:%02d:%02d", hours, minutes, seconds)
-
-    if not grtLoaded or not GitRaidToolsDB then
-        addon:Print("Now " .. now .. " -- GitRaidTools not loaded")
-        return
-    end
-
-    local rh = GitRaidToolsDB.raidHour
-    local rm = GitRaidToolsDB.raidMinute or 0
-    local raid = format("%02d:%02d:00", rh, rm)
-    local scheduled = autoRotateScheduled and "yes" or "no"
-
-    addon:Print("Now " .. now .. " -- Raid: " .. raid .. " -- Auto scheduled: " .. scheduled)
 end
 
 ---------------------------------------------------------------------------
@@ -254,24 +182,14 @@ function CR:DoRotate()
         seats = #pool
     end
 
-    -- Remove previous rotating members from council
-    self:RemoveCurrentRotating()
-
-    -- Select new members
+    -- Select candidate members
     local selected = self:SelectMembers(pool, seats)
 
-    -- Add to council
-    self:ApplyToCouncil(selected)
+    -- Capture testMode for the async dialog (Risk #2: async testMode lifecycle)
+    self._capturedTestMode = testMode
 
-    -- Record in history
-    self:RecordHistory(selected)
-
-    -- Announce
-    self:AnnounceRotation(selected)
-
-    -- Print confirmation
-    local names = self:FormatNames(selected)
-    addon:Print(format(L["rotation_success"], names))
+    -- Show confirmation dialog instead of immediately applying
+    self:ShowConfirmationDialog(selected, pool)
 end
 
 ---------------------------------------------------------------------------
@@ -371,15 +289,20 @@ end
 -- Member Selection
 ---------------------------------------------------------------------------
 function CR:SelectMembers(pool, count)
-    local selected = {}
-    -- Fisher-Yates shuffle the pool, then take the first `count`
-    local n = #pool
+    -- Shallow copy so we never mutate the caller's pool (Risk #1)
+    local copy = {}
+    for i = 1, #pool do copy[i] = pool[i] end
+
+    -- Fisher-Yates shuffle the copy, then take the first `count`
+    local n = #copy
     for i = n, 2, -1 do
         local j = random(1, i)
-        pool[i], pool[j] = pool[j], pool[i]
+        copy[i], copy[j] = copy[j], copy[i]
     end
+
+    local selected = {}
     for i = 1, count do
-        tinsert(selected, pool[i])
+        tinsert(selected, copy[i])
     end
     return selected
 end
@@ -410,63 +333,123 @@ end
 ---------------------------------------------------------------------------
 -- History
 ---------------------------------------------------------------------------
-function CR:RecordHistory(selected)
+function CR:RecordHistory(approved, deferred, satOut)
     local members = {}
-    for _, member in ipairs(selected) do
-        tinsert(members, {
-            name = member.name,
-            guid = member.guid,
-            class = member.class,
-        })
+    for _, member in ipairs(approved) do
+        tinsert(members, { name = member.name, guid = member.guid, class = member.class })
     end
-    tinsert(self.db.history, 1, {
+
+    local entry = {
+        type = "rotation",
         date = date("%Y-%m-%d"),
         timestamp = time(),
         members = members,
-    })
+    }
+
+    if deferred and #deferred > 0 then
+        entry.deferred = {}
+        for _, member in ipairs(deferred) do
+            tinsert(entry.deferred, { name = member.name, guid = member.guid, class = member.class })
+        end
+    end
+
+    if satOut and #satOut > 0 then
+        entry.satOut = {}
+        for _, member in ipairs(satOut) do
+            tinsert(entry.satOut, { name = member.name, guid = member.guid, class = member.class })
+        end
+    end
+
+    tinsert(self.db.history, 1, entry)
 end
 
 ---------------------------------------------------------------------------
 -- Announcements
 ---------------------------------------------------------------------------
-function CR:IsMuted()
-    return grtLoaded and GitRaidToolsDB and GitRaidToolsDB.muted
-end
+function CR:AnnounceRotation(approved, isTestMode)
 
-function CR:AnnounceRotation(selected)
-    if self:IsMuted() then return end
+    -- Build full council roster filtered to raid attendance
+    local raidGUIDs = self:GetRaidGUIDs(isTestMode)
 
-    local names = self:FormatNames(selected)
+    local rotatingSet = {}
+    for _, guid in ipairs(self.db.currentRotating) do
+        rotatingSet[guid] = true
+    end
 
-    -- Raid announcement
-    if self.db.announceToRaid then
-        local msg = self.db.announceTemplate:gsub("{names}", names)
-        if testMode then
-            addon:Print("|cFF888888[TEST RAID]|r " .. msg)
-        elseif IsInRaid() then
-            local channel = IsInInstance() and "INSTANCE_CHAT" or "RAID"
-            local ok, err = pcall(SendChatMessage, msg, channel)
-            if not ok then
-                addon:Print("|cFFFF4444Raid announce failed:|r " .. tostring(err))
+    local permanentNames = {}
+    local rotatingNames = {}
+    for _, guid in ipairs(addon.db.profile.council) do
+        if raidGUIDs[guid] then
+            local name = raidGUIDs[guid]
+            if rotatingSet[guid] then
+                tinsert(rotatingNames, name)
+            else
+                tinsert(permanentNames, name)
             end
         end
     end
 
-    -- Whisper instructions to each selected member
+    -- Build announcement lines
+    if self.db.announceToRaid then
+        local lines = { L["announce_header"] }
+        if #permanentNames > 0 then
+            tinsert(lines, L["announce_permanent"] .. table.concat(permanentNames, ", "))
+        end
+        if #rotatingNames > 0 then
+            tinsert(lines, L["announce_rotating"] .. table.concat(rotatingNames, ", "))
+        end
+
+        for _, line in ipairs(lines) do
+            if isTestMode then
+                addon:Print("|cFF888888[TEST RAID]|r " .. line)
+            elseif IsInRaid() then
+                local channel = IsInInstance() and "INSTANCE_CHAT" or "RAID"
+                pcall(SendChatMessage, line, channel)
+            end
+        end
+    end
+
+    -- Whisper instructions to each approved member
     if self.db.whisperInstructions then
-        for _, member in ipairs(selected) do
+        for _, member in ipairs(approved) do
             for line in self.db.instructionMessage:gmatch("[^\n]+") do
-                if testMode then
+                if isTestMode then
                     addon:Print("|cFF888888[TEST WHISPER \226\134\146 " .. member.name .. "]|r " .. line)
                 else
-                    local ok, err = pcall(SendChatMessage, line, "WHISPER", nil, member.name)
-                    if not ok then
-                        addon:Print("|cFFFF4444Whisper failed for " .. member.name .. ":|r " .. tostring(err))
-                    end
+                    pcall(SendChatMessage, line, "WHISPER", nil, member.name)
                 end
             end
         end
     end
+end
+
+---------------------------------------------------------------------------
+-- Raid GUID Helper
+---------------------------------------------------------------------------
+--- Build a map of {[guid] = name} for all members in the current raid (or
+--- online guild members in test mode). Shared by multiple functions.
+function CR:GetRaidGUIDs(isTestMode)
+    local raidGUIDs = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do
+            local name = GetRaidRosterInfo(i)
+            if name then
+                local guid = UnitGUID("raid" .. i)
+                if guid then
+                    raidGUIDs[guid] = Ambiguate(name, "short")
+                end
+            end
+        end
+    elseif isTestMode then
+        local numGuild = GetNumGuildMembers()
+        for i = 1, numGuild do
+            local name, _, _, _, _, _, _, _, online, _, _, _, _, _, _, _, guid = GetGuildRosterInfo(i)
+            if guid and online then
+                raidGUIDs[guid] = Ambiguate(name, "short")
+            end
+        end
+    end
+    return raidGUIDs
 end
 
 ---------------------------------------------------------------------------

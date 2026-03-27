@@ -5,7 +5,6 @@ RCLootCouncil plugin that rotates raid members into temporary council seats each
 ## Dependencies
 
 - **RCLootCouncil** (required) — parent addon, provides council management API
-- **GitRaidTools** (optional) — provides raid start time for auto-rotation and mute feature
 
 ## Architecture
 
@@ -26,10 +25,6 @@ table.insert(addon.db.profile.council, guid)
 addon:CouncilChanged()  -- Must call after any modification
 ```
 
-### GitRaidTools Integration
-- `GitRaidToolsDB.raidHour/raidMinute/raidDays` — raid schedule
-- `GitRaidToolsDB.muted` — announcements suppressed when true
-
 ## Slash Commands
 
 - `/rc rotate` — manually trigger council rotation
@@ -37,8 +32,8 @@ addon:CouncilChanged()  -- Must call after any modification
 
 ## Options Tabs
 
-1. **General** — Enable/disable, seat count, guild rank selection, auto-rotate toggle
-2. **Announcements** — Raid announce template, whisper instruction message, mute indicator
+1. **General** — Enable/disable, seat count, guild rank selection
+2. **Announcements** — Raid announce toggle, whisper instruction message
 3. **History** — Rotation log with class-colored names, clear/reset buttons
 
 ## How Rotation Works
