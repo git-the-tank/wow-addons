@@ -120,7 +120,10 @@ end
 -- Strata application (called from Options when strata changes)
 function ns.ApplyTickerStrata()
     if not ns.db then return end
-    ticker:SetFrameStrata(ns.db.tickerStrata or ns.CONFIG.tickerStrata)
+    local strata = ns.db.tickerStrata or ns.CONFIG.tickerStrata
+    ticker:SetFrameStrata(strata)
+    local df = _G["GitRaidToolsDispatch"]
+    if df then df:SetFrameStrata(strata) end
 end
 
 ------------------------------------------------------------
@@ -229,12 +232,14 @@ end
 
 local function EvaluateVisibility()
     if editModeActive then return end
+    if ns.testMode then return end
 
     local diff = GetSecondsUntilRaid()
     local windowSec = (ns.db and ns.db.countdownWindow or ns.CONFIG.countdownWindow) * 60
 
     if not IsRaidDay() or IsDismissed() then
         ticker:Hide()
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
         return
     end
 
@@ -242,17 +247,20 @@ local function EvaluateVisibility()
     -- Persists until manually dismissed — only GetSecondsUntilRaid wraps past OVERTIME_MAX
     if diff <= 0 then
         CheckMilestones(0)
+        if ns.OnRaidTimeZero then ns.OnRaidTimeZero() end
         local overSec = -diff
         SetMode(MODE_OVERTIME)
         tickerText:SetText(string.format("Started %d:%02d", math.floor(overSec / 60), overSec % 60))
         ResizeTicker()
         ticker:Show()
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
         return
     end
 
     -- Countdown: ticker counts down (gold)
     if diff > windowSec then
         ticker:Hide()
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
         return
     end
 
@@ -261,6 +269,7 @@ local function EvaluateVisibility()
     tickerText:SetText(string.format("Raid in %d:%02d", math.floor(diff / 60), diff % 60))
     ResizeTicker()
     ticker:Show()
+    if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
 end
 
 -- OnUpdate: re-evaluate every second (only fires while ticker is shown)
@@ -271,6 +280,46 @@ ticker:SetScript("OnUpdate", function(_, dt)
     elapsed = elapsed - 1
     EvaluateVisibility()
 end)
+
+------------------------------------------------------------
+-- Test mode: shows ticker + dispatch with sample data
+------------------------------------------------------------
+local testTimer
+local TEST_DURATION = 15
+
+function ns.EnterTestMode()
+    ns.testMode = true
+
+    -- Show ticker with sample countdown
+    SetMode(MODE_COUNTDOWN)
+    tickerText:SetText("Raid in 12:34")
+    ResizeTicker()
+    ticker:Show()
+
+    -- Show dispatch with sample data
+    if ns.EnterDispatchTestMode then ns.EnterDispatchTestMode() end
+
+    -- Cancel previous timer if re-entering
+    if testTimer then testTimer:Cancel() end
+
+    print("|cff00ccffGRT:|r Test mode — showing for " .. TEST_DURATION .. "s")
+
+    testTimer = C_Timer.NewTimer(TEST_DURATION, function()
+        ns.testMode = false
+        testTimer = nil
+        if ns.ExitDispatchTestMode then ns.ExitDispatchTestMode() end
+        EvaluateVisibility()
+        print("|cff00ccffGRT:|r Test mode ended")
+    end)
+end
+
+function ns.ExitTestMode()
+    if testTimer then testTimer:Cancel() end
+    testTimer = nil
+    ns.testMode = false
+    if ns.ExitDispatchTestMode then ns.ExitDispatchTestMode() end
+    EvaluateVisibility()
+end
 
 ------------------------------------------------------------
 -- Auto-invite: fires render at configured minutes before raid

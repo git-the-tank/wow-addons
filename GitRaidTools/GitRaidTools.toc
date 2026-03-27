@@ -10,4 +10,5 @@ lib\LibEditMode\embed.xml
 GitRaidTools.lua
 src\Countdown.lua
 src\Invite.lua
+src\Dispatch.lua
 src\Options.lua

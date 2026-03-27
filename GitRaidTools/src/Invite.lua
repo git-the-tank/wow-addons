@@ -292,4 +292,9 @@ function ns.RaidTimeInvite(arg)
     steps[#steps + 1] = InvokeMRTInvite
     local delay = ns.db and ns.db.inviteDelay or ns.CONFIG.inviteDelay
     RunSequence(steps, delay)
+
+    if ns.db then
+        ns.db.dispatchInvSent = true
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
+    end
 end

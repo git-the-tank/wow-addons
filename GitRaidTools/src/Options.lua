@@ -429,6 +429,82 @@ cc:SetHeight(math.abs(cy.y) + 16)
 SetupPanel(countdownPanel, { broadcastInstanceCB, broadcastGuildCB, milestoneCB }, { windowSlider, fontSizeSlider })
 
 ------------------------------------------------------------
+-- Panel 4: Dispatch
+------------------------------------------------------------
+local dispatchPanel, dc = CreateScrollPanel()
+local dy = { y = -16 }
+
+MakeHeader(dc, dy, "Dispatch Status")
+MakeSpacer(dy, 4)
+
+MakeLabel(dc, dy, "|cff888888Shows checkmarks for automated raid-day actions|r")
+MakeSpacer(dy, 4)
+
+local dispatchEnabledCB = MakeCheckbox(dc, dy, "Enable Dispatch Display",
+    function() return ns.db and ns.db.dispatchEnabled ~= false end,
+    function(v)
+        if ns.db then
+            ns.db.dispatchEnabled = v
+            if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
+        end
+    end)
+
+MakeSpacer(dy, 8)
+MakeHeader(dc, dy, "RC Rotate")
+MakeSpacer(dy, 4)
+
+local rcRotateEnabledCB = MakeCheckbox(dc, dy, "Auto-trigger /rc rotate at raid start",
+    function() return ns.db and ns.db.rcRotateEnabled == true end,
+    function(v) if ns.db then ns.db.rcRotateEnabled = v end end)
+
+MakeLabel(dc, dy, "|cff888888Requires RCLootCouncil + CouncilRotation addon|r")
+
+MakeSpacer(dy, 8)
+MakeHeader(dc, dy, "Typography")
+MakeSpacer(dy, 4)
+
+MakeFontDropdown(dc, dy, "Font",
+    function() return ns.db and ns.db.dispatchFontFace or ns.CONFIG.dispatchFontFace end,
+    function(v)
+        if ns.db then
+            ns.db.dispatchFontFace = v
+            if ns.ApplyDispatchFont then ns.ApplyDispatchFont() end
+        end
+    end)
+
+local dispatchFontSizeSlider = MakeSlider(dc, dy, "Font Size", 10, 40, 1,
+    function() return ns.db and ns.db.dispatchFontSize or ns.CONFIG.dispatchFontSize end,
+    function(v)
+        if ns.db then
+            ns.db.dispatchFontSize = v
+            if ns.ApplyDispatchFont then ns.ApplyDispatchFont() end
+        end
+    end,
+    function(v) return string.format("%d pt", v) end)
+
+MakeSpacer(dy, 12)
+MakeHeader(dc, dy, "Preview")
+MakeSpacer(dy, 4)
+
+local testBtn = CreateFrame("Button", nil, dc, "UIPanelButtonTemplate")
+testBtn:SetPoint("TOPLEFT", 16, dy.y)
+testBtn:SetSize(120, 24)
+testBtn:SetText("Test Mode")
+testBtn:SetScript("OnClick", function()
+    if ns.testMode then
+        if ns.ExitTestMode then ns.ExitTestMode() end
+    else
+        if ns.EnterTestMode then ns.EnterTestMode() end
+    end
+end)
+dy.y = dy.y - 28
+
+MakeLabel(dc, dy, "|cff888888Shows ticker + dispatch for 15s, cycles through states|r")
+
+dc:SetHeight(math.abs(dy.y) + 16)
+SetupPanel(dispatchPanel, { dispatchEnabledCB, rcRotateEnabledCB }, { dispatchFontSizeSlider })
+
+------------------------------------------------------------
 -- Register categories
 ------------------------------------------------------------
 local mainCategory = Settings.RegisterCanvasLayoutCategory(generalPanel, "Git's Raid Tools")
@@ -437,3 +513,4 @@ ns.settingsCategoryID = mainCategory:GetID()
 
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, invitePanel, "Invites")
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, countdownPanel, "Countdown")
+Settings.RegisterCanvasLayoutSubcategory(mainCategory, dispatchPanel, "Dispatch")

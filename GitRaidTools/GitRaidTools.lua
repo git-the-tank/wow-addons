@@ -18,6 +18,10 @@ ns.CONFIG = {
     fontFace = "Friz Quadrata",
     countdownFontSize = 28,
     invitesEnabled = true,
+    dispatchEnabled = true,
+    dispatchFontFace = "Friz Quadrata",
+    dispatchFontSize = 14,
+    rcRotateEnabled = false,
 }
 
 -- Shared time string: "X minutes and Y seconds", omits zero components
@@ -73,6 +77,12 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
         ns.RaidTimeUnseen()
     elseif cmd == "clear" then
         ns.RaidTimeClear()
+    elseif cmd == "test" then
+        if ns.testMode then
+            if ns.ExitTestMode then ns.ExitTestMode() end
+        else
+            if ns.EnterTestMode then ns.EnterTestMode() end
+        end
     elseif cmd == "mute" then
         if ns.db then ns.db.muted = true end
         print("|cff00ccffGRT:|r Muted — announcements to raid/guild disabled")
@@ -106,6 +116,7 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
         print("  /grt flavor     — Show all flavor text variations")
         print("  /grt unseen     — Show unseen variation pool status")
         print("  /grt clear      — Reset unseen pool")
+        print("  /grt test       — Toggle test mode (preview ticker + dispatch)")
         print("  /grt time       — Show raid time info")
         print("  /grt mute       — Mute announcements")
         print("  /grt unmute     — Unmute announcements")
