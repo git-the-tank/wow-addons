@@ -42,6 +42,15 @@ When adding a new addon, register its abbreviation here.
 |--------|---------|
 | `repo` | Scripts, CI, root config, documentation, multi-addon tooling |
 
+## Releases & Changelogs
+
+Each addon that gets published (e.g. to wago.io) maintains a `CHANGELOG.md` in its directory.
+
+- **Format:** `## X.Y.Z — Title` followed by bullet points.
+- **When to update:** Every version bump / release. Add the new section at the top.
+- **Purpose:** Copy-paste into wago.io (or other distribution site) release notes.
+- Bump the `## Version` in the `.toc` file to match.
+
 ## Workflow
 
 - No PRs — commit and push directly to main.
