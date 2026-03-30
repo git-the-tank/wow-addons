@@ -1,0 +1,15 @@
+## Interface: 120001
+## Title: RaidPerformance
+## Notes: Historical raider analytics dashboard powered by Warcraft Logs data
+## Author: travisj
+## Version: 0.1.0
+## SavedVariables: RaidPerformanceData
+## SavedVariablesPerCharacter: RaidPerformanceDB
+
+RaidPerformance.lua
+src/Colors.lua
+src/Dashboard.lua
+src/RosterView.lua
+src/BossView.lua
+src/PlayerView.lua
+src/Tooltip.lua
