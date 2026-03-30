@@ -6,8 +6,10 @@ local _, ns = ...
 local CHECK = "|TInterface/RaidFrame/ReadyCheck-Ready:0|t"
 local CROSS = "|TInterface/RaidFrame/ReadyCheck-NotReady:0|t"
 local QUESTION = "|TInterface/RaidFrame/ReadyCheck-Waiting:0|t"
-local SCAN_INTERVAL = 1.0        -- seconds between inspect requests
-local INSPECT_DELAY = 0.6        -- seconds after INSPECT_READY before reading items
+local SCAN_INTERVAL = 1.5        -- ticker interval (timeout heartbeat)
+local INSPECT_DELAY = 0.8        -- seconds after INSPECT_READY before reading items
+local INSPECT_TIMEOUT = 3.0      -- seconds before giving up on an inspect
+local CHAIN_GAP = 0.4            -- seconds between ClearInspectPlayer and next NotifyInspect
 local MAX_ROWS = 40              -- WoW raid cap
 local ROW_HEIGHT = 18
 local NAME_WIDTH = 105
@@ -27,12 +29,13 @@ local CB_WIDTH = 16
 ns.scan = {
     active = false,
     queue = {},         -- ordered list of { name, unit }
-    current = nil,      -- { name, unit, guid }
+    current = nil,      -- { name, unit, guid, start }
     ticker = nil,
     count = 0,
     total = 0,
     units = {},         -- fullName → unitID
     paused = false,     -- combat pause
+    retries = {},       -- fullName → retry count
 }
 
 ns.auditData = {}       -- fullName → scan result
@@ -196,6 +199,17 @@ local function ProcessUnitData(name, unit)
         end
     end
 
+    -- Incomplete data check — bail early before building the full result
+    local scan = ns.scan
+    if not UnitIsUnit(unit, "player") and equippedCount < 5 then
+        local retries = scan.retries[name] or 0
+        if retries < 2 then
+            scan.retries[name] = retries + 1
+            scan.queue[#scan.queue + 1] = { name = name, unit = unit }
+            return
+        end
+    end
+
     -- 2H weapon: if no OH weapon, count MH double for ilvl average
     if not ohIsWeapon and (itemIlvl[17] or 0) == 0 and (itemIlvl[16] or 0) > 0 then
         totalIlvl = totalIlvl + itemIlvl[16]
@@ -230,13 +244,12 @@ local function ProcessUnitData(name, unit)
         bestGemRank = 0,
         failScore = 0,
         status = "scanned",
-        scanTime = GetTime(),
     }
 
     -- Evaluate with current settings
     ns.EvaluatePlayer(ns.auditData[name])
 
-    ns.scan.count = ns.scan.count + 1
+    scan.count = scan.count + 1
     if ns.UpdateAuditRow then ns.UpdateAuditRow(name) end
     ns.UpdateProgress()
 end
@@ -310,9 +323,23 @@ local function ScanNext()
 
     -- If still waiting on a previous inspect, check for timeout
     if scan.current then
-        -- Timeout: mark failed and move on
+        if GetTime() - scan.current.start < INSPECT_TIMEOUT then
+            return  -- still within timeout window, keep waiting
+        end
+        -- Timed out — mark as failed
+        local cur = scan.current
+        if ns.auditData[cur.name] then
+            ns.auditData[cur.name].status = "failed"
+        else
+            ns.auditData[cur.name] = {
+                name = cur.name, shortName = ShortName(cur.name),
+                status = "failed",
+            }
+        end
+        scan.count = scan.count + 1
         scan.current = nil
-        -- The player whose inspect we were waiting on gets no data update
+        ClearInspectPlayer()
+        ns.UpdateProgress()
     end
 
     -- Find next pending
@@ -330,7 +357,7 @@ local function ScanNext()
         elseif UnitIsUnit(unit, "player") then
             -- Self: read directly, no NotifyInspect needed
             ProcessUnitData(name, unit)
-            return
+            -- Continue loop to start next inspect immediately
         elseif not CanInspect(unit, false) then
             -- Out of range or not inspectable
             if not ns.auditData[name] then
@@ -344,7 +371,7 @@ local function ScanNext()
         else
             -- Request inspect
             local guid = UnitGUID(unit)
-            scan.current = { name = name, unit = unit, guid = guid }
+            scan.current = { name = name, unit = unit, guid = guid, start = GetTime() }
             NotifyInspect(unit)
             return
         end
@@ -383,6 +410,8 @@ local function OnInspectReady(guid)
             end
         end
         ClearInspectPlayer()
+        -- Chain next inspect after a short gap (server needs time after ClearInspectPlayer)
+        C_Timer.After(CHAIN_GAP, ScanNext)
     end)
 end
 
@@ -402,6 +431,7 @@ function ns.StartAuditScan()
     scan.paused = false
     wipe(ns.auditData)
     wipe(ns.auditSelected)
+    wipe(scan.retries)
 
     -- Build roster
     local inRaid = IsInRaid()
@@ -896,7 +926,14 @@ local function RenderEnchCell(data, col)
         -- Gems summary column
         local g = data.gems
         if not g or g.sockets == 0 then return "-", "ff666666" end
-        local color = g.passing >= g.sockets and "ff00ff00" or "ffff4444"
+        local color
+        if g.filled < g.sockets then
+            color = "ffff4444"        -- red: empty sockets
+        elseif g.passing < g.filled then
+            color = "ffffff00"        -- yellow: all filled but some below threshold
+        else
+            color = "ff00ff00"        -- green: all pass
+        end
         local rankStr = ""
         local rank = data.bestGemRank or 0
         if rank > 0 then
