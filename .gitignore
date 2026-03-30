@@ -31,6 +31,7 @@ weakauras/
 
 # Node (if using any build tools)
 node_modules/
+dist/
 
 # Wago/CurseForge packager
 .pkgmeta
