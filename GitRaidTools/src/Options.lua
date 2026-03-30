@@ -505,6 +505,85 @@ dc:SetHeight(math.abs(dy.y) + 16)
 SetupPanel(dispatchPanel, { dispatchEnabledCB, rcRotateEnabledCB }, { dispatchFontSizeSlider })
 
 ------------------------------------------------------------
+-- Panel 5: Audit
+------------------------------------------------------------
+local auditPanel, ac = CreateScrollPanel()
+local ay = { y = -16 }
+
+MakeHeader(ac, ay, "Gear Audit")
+MakeSpacer(ay, 4)
+
+MakeLabel(ac, ay, "|cff888888These settings are also toggleable in the audit window|r")
+MakeSpacer(ay, 8)
+
+local Q1I = ns.Q1_ICON or ""
+local Q2I = ns.Q2_ICON or ""
+
+local THRESH_OPTIONS = {
+    { label = "Any (accept anything)", value = "any" },
+    { label = "High " .. Q1I, value = "high_q1" },
+    { label = "High " .. Q2I .. " (max)", value = "high_q2" },
+}
+
+local EPIC_OPTIONS = {
+    { label = Q1I .. "+ (any epic)", value = 1 },
+    { label = Q2I .. " (max quality)", value = 2 },
+}
+
+MakeDropdown(ac, ay, "Enchant Threshold",
+    THRESH_OPTIONS,
+    function() return ns.db and ns.db.auditEnchantThreshold or ns.CONFIG.auditEnchantThreshold end,
+    function(v)
+        if ns.db then
+            ns.db.auditEnchantThreshold = v
+            if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+        end
+    end)
+
+MakeSpacer(ay, 4)
+
+MakeDropdown(ac, ay, "Gem Threshold",
+    THRESH_OPTIONS,
+    function() return ns.db and ns.db.auditGemThreshold or ns.CONFIG.auditGemThreshold end,
+    function(v)
+        if ns.db then
+            ns.db.auditGemThreshold = v
+            if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+        end
+    end)
+
+MakeSpacer(ay, 4)
+
+MakeDropdown(ac, ay, "Epic Gem Minimum",
+    EPIC_OPTIONS,
+    function() return ns.db and ns.db.auditEpicGemMin or ns.CONFIG.auditEpicGemMin end,
+    function(v)
+        if ns.db then
+            ns.db.auditEpicGemMin = v
+            if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+        end
+    end)
+
+MakeSpacer(ay, 12)
+
+-- Dynamic summary label
+local auditSummaryLabel = MakeLabel(ac, ay, "")
+
+local THRESH_LABELS = { any = "Any", high_q1 = "High " .. Q1I, high_q2 = "High " .. Q2I }
+
+local function UpdateAuditSummary()
+    if not ns.db then return end
+    local e = THRESH_LABELS[ns.db.auditEnchantThreshold] or ("High " .. Q1I)
+    local g = THRESH_LABELS[ns.db.auditGemThreshold] or ("High " .. Q1I)
+    local ep = ns.db.auditEpicGemMin == 2 and Q2I or (Q1I .. "+")
+    auditSummaryLabel:SetText(string.format(
+        "|cff888888Ench: %s, Gems: %s, Epic: %s|r", e, g, ep))
+end
+
+ac:SetHeight(math.abs(ay.y) + 16)
+SetupPanel(auditPanel, {}, {}, UpdateAuditSummary)
+
+------------------------------------------------------------
 -- Register categories
 ------------------------------------------------------------
 local mainCategory = Settings.RegisterCanvasLayoutCategory(generalPanel, "Git's Raid Tools")
@@ -514,3 +593,4 @@ ns.settingsCategoryID = mainCategory:GetID()
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, invitePanel, "Invites")
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, countdownPanel, "Countdown")
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, dispatchPanel, "Dispatch")
+Settings.RegisterCanvasLayoutSubcategory(mainCategory, auditPanel, "Audit")

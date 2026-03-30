@@ -11,4 +11,6 @@ GitRaidTools.lua
 src\Countdown.lua
 src\Invite.lua
 src\Dispatch.lua
+src\AuditData.lua
+src\Audit.lua
 src\Options.lua

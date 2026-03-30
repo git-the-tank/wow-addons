@@ -22,7 +22,55 @@ ns.CONFIG = {
     dispatchFontFace = "Friz Quadrata",
     dispatchFontSize = 14,
     rcRotateEnabled = false,
+    -- Audit: "any" = accept anything, "high_q1" = high-level Q1+, "high_q2" = high-level Q2
+    auditEnchantThreshold = "high_q1",
+    auditGemThreshold = "high_q1",
+    auditEpicGemMin = 2,            -- 1 = Q1+, 2 = Q2 only
 }
+
+------------------------------------------------------------
+-- Shared UI: Cycle Button (click to cycle through options)
+-- Reusable across panels. Returns the button frame.
+--   parent    — parent frame
+--   options   — { { label = "High Q1", value = "high_q1" }, ... }
+--   get/set   — read/write the setting
+--   onChange  — optional callback after value changes
+------------------------------------------------------------
+function ns.MakeCycleButton(parent, options, getSetting, setSetting, onChange)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetHeight(14)
+    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT")
+    btn._label = label
+
+    local function Refresh()
+        local current = getSetting()
+        for _, v in ipairs(options) do
+            if v.value == current then
+                label:SetText("|cffffff00" .. v.label .. "|r")
+                break
+            end
+        end
+        btn:SetWidth(math.max(label:GetStringWidth() + 4, 20))
+    end
+    btn._refresh = Refresh
+
+    btn:SetScript("OnClick", function()
+        local current = getSetting()
+        for i, v in ipairs(options) do
+            if v.value == current then
+                local nxt = options[(i % #options) + 1]
+                setSetting(nxt.value)
+                Refresh()
+                if onChange then onChange() end
+                return
+            end
+        end
+    end)
+
+    C_Timer.After(0, Refresh)
+    return btn
+end
 
 -- Shared time string: "X minutes and Y seconds", omits zero components
 function ns.FormatTimeString(totalSec)
@@ -104,12 +152,15 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
                 print(string.format("|cff00ccffGRT:|r Raid started %s ago", ns.FormatTimeString(-diff)))
             end
         end
+    elseif cmd == "audit" then
+        ns.ToggleAuditWindow()
     elseif cmd == "config" then
         C_Timer.After(0, function()
             Settings.OpenToCategory(ns.settingsCategoryID)
         end)
     else
         print("|cff00ccffGitRaidTools|r commands:")
+        print("  /grt audit      — Open gear audit window")
         print("  /grt config     — Open settings")
         print("  /grt inv [n]    — Send raid invite to guild chat")
         print("  /grt render [n] — Preview invite locally")
