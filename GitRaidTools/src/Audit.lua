@@ -482,6 +482,42 @@ function ns.StartAuditScan()
 end
 
 ------------------------------------------------------------
+-- Single-Player Rescan
+------------------------------------------------------------
+
+function ns.RescanPlayer(name)
+    local scan = ns.scan
+    local unit = scan.units[name]
+    if not unit or not UnitExists(unit) then
+        print("|cff888888[GRT] Cannot rescan " .. (name or "?") .. " - not in group|r")
+        return
+    end
+
+    -- Clear old data and mark as pending
+    ns.auditData[name] = {
+        name = name,
+        shortName = ShortName(name),
+        class = ClassToken(unit),
+        status = "pending",
+    }
+    scan.retries[name] = nil
+
+    -- Append to queue
+    scan.queue[#scan.queue + 1] = { name = name, unit = unit }
+    scan.total = scan.total + 1
+    ns.UpdateProgress()
+    if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+
+    -- If no scan is running, start a ticker to process the queue
+    if not scan.active or not scan.ticker then
+        scan.active = true
+        scan.paused = false
+        scan.ticker = C_Timer.NewTicker(SCAN_INTERVAL, ScanNext)
+        ScanNext()
+    end
+end
+
+------------------------------------------------------------
 -- Combat Pause
 ------------------------------------------------------------
 local combatFrame = CreateFrame("Frame")
@@ -734,10 +770,27 @@ local function CreateRow(index)
     end)
     row.selectCB = cb
 
-    -- Name cell
-    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    nameText:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-    nameText:SetWidth(NAME_WIDTH - CB_WIDTH - 2)
+    -- Name cell (clickable for rescan)
+    local nameBtn = CreateFrame("Button", nil, row)
+    nameBtn:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    nameBtn:SetSize(NAME_WIDTH - CB_WIDTH - 2, ROW_HEIGHT)
+    nameBtn:RegisterForClicks("RightButtonUp")
+    nameBtn:SetScript("OnClick", function()
+        if row._playerName then
+            ns.RescanPlayer(row._playerName)
+        end
+    end)
+    nameBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT") -- luacheck: ignore 113
+        GameTooltip:SetText("Right-click to rescan", 0.8, 0.8, 0.8) -- luacheck: ignore 113
+        GameTooltip:Show() -- luacheck: ignore 113
+    end)
+    nameBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide() -- luacheck: ignore 113
+    end)
+
+    local nameText = nameBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    nameText:SetAllPoints()
     nameText:SetJustifyH("LEFT")
     nameText:SetWordWrap(false)
     row.nameText = nameText
