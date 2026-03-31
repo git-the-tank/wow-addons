@@ -33,6 +33,9 @@ weakauras/
 node_modules/
 dist/
 
+# Companion CLI credentials
+.raidperfrc.json
+
 # Wago/CurseForge packager
 .pkgmeta
 

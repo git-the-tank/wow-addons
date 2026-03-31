@@ -1,0 +1,20 @@
+{
+  "guild": "Your Guild Name",
+  "realm": "Your Realm",
+  "region": "us",
+  "ranks": [0, 1, 2, 3],
+  "difficulty": "Heroic",
+  "blizzard": {
+    "clientId": "your-blizzard-client-id",
+    "clientSecret": "your-blizzard-client-secret"
+  },
+  "wcl": {
+    "clientId": "your-wcl-client-id",
+    "clientSecret": "your-wcl-client-secret"
+  },
+  "output": {
+    "wtfPath": "H:\\World of Warcraft\\_retail_\\WTF",
+    "accountName": "YOUR_ACCOUNT_NAME"
+  },
+  "maxRecentParses": 10
+}
