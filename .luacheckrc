@@ -93,6 +93,22 @@ files['TankBattleText/**'] = {
     },
 }
 
+files['GitRaidNotes/**'] = {
+    globals = {
+        'SLASH_GITRAIDNOTES1',
+        'GitRaidNotesDB',
+    },
+    read_globals = {
+        'GitRaidNotesFrame',
+        'GitRaidNotesEditor',
+        'GitRaidNotesEditorScroll',
+        'LibStub',
+        'ChatFontNormal',
+        'GameFontNormal',
+        'GameFontHighlightSmall',
+    },
+}
+
 files['GitRaidTools/**'] = {
     globals = {
         'SLASH_GITRAIDTOOLS1',
@@ -119,6 +135,33 @@ files['RCLootCouncil_CouncilRotation/**'] = {
         'GuildControlGetRankName',
         'Ambiguate',
         'IsInInstance',
+    },
+}
+
+files['RaidPerformance/**'] = {
+    globals = {
+        'SLASH_RAIDPERF1',
+        'SLASH_RAIDPERF2',
+        'RaidPerformanceData',
+        'RaidPerformanceDB',
+    },
+    read_globals = {
+        'Settings',
+        'RAID_CLASS_COLORS',
+        'GameTooltip',
+        'Enum',
+        'TooltipDataProcessor',
+        'UIDropDownMenu_SetWidth',
+        'UIDropDownMenu_SetText',
+        'UIDropDownMenu_Initialize',
+        'UIDropDownMenu_CreateInfo',
+        'UIDropDownMenu_AddButton',
+        'UnitInRaid',
+        'UnitInParty',
+        'UnitIsPlayer',
+        'UnitName',
+        'GetNormalizedRealmName',
+        'GetCursorPosition',
     },
 }
 
