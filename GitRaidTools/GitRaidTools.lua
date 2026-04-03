@@ -7,17 +7,19 @@ ns.CONFIG = {
     countdownWindow = 30,   -- show countdown this many minutes before raid
     raidDays = { 3, 5 },   -- days of the week (1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat)
     inviteDelay = 0.2,      -- seconds between invite message lines
-    keyword = "lust",
+    keyword = "inv",
     autoInviteEnabled = false,
     autoInviteMinutes = 15,
     milestoneAnnounce = false,
-    broadcastInstance = true,
-    broadcastGuild = false,
+    countdownEnabled = true,
+    broadcastRaid = false,
+    broadcastGuild = true,
     tickerStrata = "MEDIUM",
     muted = false,
     fontFace = "Friz Quadrata",
     countdownFontSize = 28,
     invitesEnabled = true,
+    inviteTemplate = "========== RAID TIME ==========\n.\n%flavor%\nWhisper %name% with \"%keyword%\" for an invite\n.\n========== RAID TIME ==========",
     dispatchEnabled = true,
     dispatchFontFace = "Friz Quadrata",
     dispatchFontSize = 14,
@@ -26,6 +28,9 @@ ns.CONFIG = {
     auditEnchantThreshold = "high_q1",
     auditGemThreshold = "high_q1",
     auditEpicGemMin = 2,            -- 1 = Q1+, 2 = Q2 only
+    auditReportGroup = true,
+    auditReportWhisper = true,
+    auditReportGuild = false,
 }
 
 ------------------------------------------------------------
@@ -120,7 +125,11 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
     elseif cmd == "render" then
         ns.RaidTimeRender(arg)
     elseif cmd == "flavor" then
-        ns.RaidTimeFlavor()
+        if arg == "reset" then
+            ns.RaidTimeClear()
+        else
+            ns.RaidTimeFlavor()
+        end
     elseif cmd == "unseen" then
         ns.RaidTimeUnseen()
     elseif cmd == "clear" then
@@ -164,9 +173,8 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
         print("  /grt config     — Open settings")
         print("  /grt inv [n]    — Send raid invite to guild chat")
         print("  /grt render [n] — Preview invite locally")
-        print("  /grt flavor     — Show all flavor text variations")
-        print("  /grt unseen     — Show unseen variation pool status")
-        print("  /grt clear      — Reset unseen pool")
+        print("  /grt flavor       — Show all flavor text variations")
+        print("  /grt flavor reset — Reset flavor rotation pool")
         print("  /grt test       — Toggle test mode (preview ticker + dispatch)")
         print("  /grt time       — Show raid time info")
         print("  /grt mute       — Mute announcements")

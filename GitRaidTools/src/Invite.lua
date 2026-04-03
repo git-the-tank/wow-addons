@@ -1,7 +1,5 @@
 local _, ns = ...
 
-local BORDER = '========== RAID TIME =========='
-
 -- Each variation is just the flavor lines between the borders.
 -- Use %name% as a placeholder for the player name.
 local VARIATIONS = {
@@ -132,39 +130,40 @@ end
 
 local function BuildLines(index)
     local name = UnitName("player")
-    local variation
-    if index then
-        variation = VARIATIONS[index + 1]
-        if not variation then
-            print("|cff00ccffGRT:|r Invalid variation index. Valid range: 0-" .. (#VARIATIONS - 1))
-            return nil
-        end
-        if not MarkSeen(index + 1) then
-            print("|cff00ccffGRT:|r Variation " .. index .. " already used. Pool resets when all are seen.")
-            return nil
-        end
-    else
-        variation = PickVariation()
-    end
-    local lines = { BORDER }
-    local hours, minutes = GetGameTime()
-    local nowMins = hours * 60 + minutes
-    local raidHour = ns.db and ns.db.raidHour or ns.CONFIG.raidHour
-    local raidMinute = ns.db and ns.db.raidMinute or ns.CONFIG.raidMinute
-    local countdownWindow = ns.db and ns.db.countdownWindow or ns.CONFIG.countdownWindow
-    local diff = (raidHour * 60 + raidMinute) - nowMins
-    if diff > 0 and diff <= countdownWindow then
-        lines[#lines + 1] = 'Pulling first boss in ' .. diff .. (diff == 1 and ' minute!' or ' minutes!')
-    end
     local keyword = ns.db and ns.db.keyword or ns.CONFIG.keyword
-    local inviteStr = 'Whisper %name% with "' .. keyword .. '" for an invite'
-    lines[#lines + 1] = '.'
-    for _, line in ipairs(variation) do
-        lines[#lines + 1] = line:gsub("%%name%%", name)
+    local template = (ns.db and ns.db.inviteTemplate) or ns.CONFIG.inviteTemplate
+
+    local flavorText = nil
+    if template:find("%%flavor%%") then
+        local variation
+        if index then
+            variation = VARIATIONS[index + 1]
+            if not variation then
+                print("|cff00ccffGRT:|r Invalid variation index. Valid range: 0-" .. (#VARIATIONS - 1))
+                return nil
+            end
+            if not MarkSeen(index + 1) then
+                print("|cff00ccffGRT:|r Variation " .. index .. " already used. Pool resets when all are seen.")
+                return nil
+            end
+        else
+            variation = PickVariation()
+        end
+        flavorText = table.concat(variation, " | "):gsub("%%name%%", name)
     end
-    lines[#lines + 1] = inviteStr:gsub("%%name%%", name)
-    lines[#lines + 1] = '.'
-    lines[#lines + 1] = BORDER
+
+    local lines = {}
+    for line in (template .. "\n"):gmatch("([^\n]*)\n") do
+        if line == "%flavor%" then
+            if flavorText then
+                lines[#lines + 1] = flavorText
+            end
+        else
+            line = line:gsub("%%name%%", name)
+            line = line:gsub("%%keyword%%", keyword)
+            lines[#lines + 1] = line
+        end
+    end
     return lines
 end
 

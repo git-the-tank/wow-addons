@@ -13,6 +13,7 @@ src\Tracker.lua
 src\Display.lua
 src\Stats.lua
 src\DTPSBar.lua
+src\Durability.lua
 src\Log.lua
 src\Compat.lua
 src\EditMode.lua

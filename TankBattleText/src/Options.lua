@@ -128,6 +128,7 @@ function ns.ApplyGlobalFont()
     if ns.ApplyStatsFont then ns.ApplyStatsFont(path, size, outline) end
     if ns.ApplyDTPSBarFont then ns.ApplyDTPSBarFont(path, size, outline) end
     if ns.ApplyCollapseFont then ns.ApplyCollapseFont(path, size, outline) end
+    if ns.ApplyDurabilityFont then ns.ApplyDurabilityFont(path, size, outline) end
 end
 
 function ns.ResetDefaults()
@@ -140,6 +141,13 @@ function ns.ResetDefaults()
         end
     end
     for key, val in pairs(ns.DTPS_BAR_DEFAULTS) do
+        if type(val) == "table" then
+            ns.db[key] = {unpack(val)}
+        else
+            ns.db[key] = val
+        end
+    end
+    for key, val in pairs(ns.DURABILITY_DEFAULTS) do
         if type(val) == "table" then
             ns.db[key] = {unpack(val)}
         else
@@ -510,6 +518,25 @@ spc_content:SetHeight(math.abs(spc.y) + 16)
 SetupPanel(splitPanel, { showSplitCB, showBorderCB }, {})
 
 ------------------------------------------------------------
+-- Panel 6: Durability
+------------------------------------------------------------
+local durPanel, durc_content = CreateScrollPanel()
+local durc = { y = -16 }
+
+MakeHeader(durc_content, durc, "Durability")
+MakeSpacer(durc, 4)
+
+local showDurabilityCB = MakeCheckbox(durc_content, durc, "Show Durability Frame",
+    function() return ns.db and ns.db.showDurability ~= false end,
+    function(v)
+        ns.db.showDurability = v
+        if v then ns.UpdateDurability() else TankBattleTextDurabilityFrame:Hide() end
+    end)
+
+durc_content:SetHeight(math.abs(durc.y) + 16)
+SetupPanel(durPanel, { showDurabilityCB }, {})
+
+------------------------------------------------------------
 -- Register categories
 ------------------------------------------------------------
 local mainCategory = Settings.RegisterCanvasLayoutCategory(generalPanel, "TankBattleText")
@@ -520,3 +547,4 @@ Settings.RegisterCanvasLayoutSubcategory(mainCategory, damagePanel, "Damage Text
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, statsPanel, "Stats")
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, dtpsPanel, "DTPS Bar")
 Settings.RegisterCanvasLayoutSubcategory(mainCategory, splitPanel, "Split Bar")
+Settings.RegisterCanvasLayoutSubcategory(mainCategory, durPanel, "Durability")

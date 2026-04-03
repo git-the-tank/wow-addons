@@ -26,8 +26,8 @@ local COLOR_GREEN = { 0.2, 1, 0.2 }
 local function Broadcast(msg)
     if not ns.db then return end
     if ns.db.muted then return end
-    if ns.db.broadcastInstance then
-        SendChatMessage(msg, "INSTANCE_CHAT")
+    if ns.db.broadcastRaid then
+        SendChatMessage(msg, "RAID")
     end
     if ns.db.broadcastGuild then
         SendChatMessage(msg, "GUILD")
@@ -234,6 +234,12 @@ local function EvaluateVisibility()
     if editModeActive then return end
     if ns.testMode then return end
 
+    if ns.db and ns.db.countdownEnabled == false then
+        ticker:Hide()
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
+        return
+    end
+
     local diff = GetSecondsUntilRaid()
     local windowSec = (ns.db and ns.db.countdownWindow or ns.CONFIG.countdownWindow) * 60
 
@@ -313,6 +319,10 @@ function ns.EnterTestMode()
     end)
 end
 
+function ns.EvaluateCountdownVisibility()
+    EvaluateVisibility()
+end
+
 function ns.ExitTestMode()
     if testTimer then testTimer:Cancel() end
     testTimer = nil
@@ -328,6 +338,7 @@ local autoInviteFired = false
 
 local function ScheduleAutoInvite()
     if not ns.db or ns.db.autoInviteEnabled == false then return end
+    if ns.db.invitesEnabled == false then return end
     if autoInviteFired then return end
     if IsMuted() then return end
 
@@ -379,7 +390,7 @@ local function ScheduleNextCheck()
     end)
 
     -- Schedule auto-invite
-    if ns.db and ns.db.autoInviteEnabled ~= false then
+    if ns.db and ns.db.autoInviteEnabled ~= false and ns.db.invitesEnabled ~= false then
         local inviteTriggerSec = (ns.db.autoInviteMinutes or ns.CONFIG.autoInviteMinutes) * 60
         if diff > inviteTriggerSec and not autoInviteFired then
             local inviteDelay = diff - inviteTriggerSec

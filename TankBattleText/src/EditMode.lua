@@ -29,6 +29,14 @@ local function ApplyDefaults()
     end
     -- Split bar defaults
     if ns.db.showSplitBorder == nil then ns.db.showSplitBorder = true end
+    -- Durability defaults
+    if ns.DURABILITY_DEFAULTS then
+        for key, val in pairs(ns.DURABILITY_DEFAULTS) do
+            if ns.db[key] == nil then
+                ns.db[key] = type(val) == "table" and {unpack(val)} or val
+            end
+        end
+    end
 end
 
 ------------------------------------------------------------
@@ -721,12 +729,102 @@ initFrame:SetScript("OnEvent", function()
             },
         })
 
+        -- Durability frame
+        local durFrame = TankBattleTextDurabilityFrame
+
+        if ns.db.showDurability == false then
+            durFrame:Hide()
+        end
+
+        RestorePosition(durFrame, "durabilityPos")
+
+        C_Timer.After(0, function()
+            ns.ApplyDurabilitySize(ns.db.durabilitySize or 40)
+            ns.UpdateDurability()
+        end)
+
+        local durabilityDefault = {
+            point = "CENTER",
+            x     = 200,
+            y     = -100,
+        }
+
+        LibEditMode:AddFrame(durFrame, function(_, _, point, x, y)
+            if ns.db then
+                ns.db.durabilityPos = { point = point, x = x, y = y }
+            end
+        end, durabilityDefault, "TBT: Durability")
+
+        LibEditMode:AddFrameSettings(durFrame, {
+            {
+                kind    = ST.Checkbox,
+                name    = "Show Durability",
+                default = true,
+                get     = function() return ns.db.showDurability ~= false end,
+                set     = function(_, v)
+                    ns.db.showDurability = v
+                    if v then ns.ShowDurabilityPreview() else durFrame:Hide() end
+                end,
+            },
+            {
+                kind      = ST.Slider,
+                name      = "Box Size",
+                default   = 40,
+                minValue  = 20,
+                maxValue  = 100,
+                valueStep = 2,
+                get       = function() return ns.db.durabilitySize or 40 end,
+                set       = function(_, v)
+                    ns.db.durabilitySize = v
+                    ns.ApplyDurabilitySize(v)
+                    ns.ShowDurabilityPreview()
+                end,
+                formatter = function(value) return string.format("%d px", value) end,
+            },
+            {
+                kind    = ST.Dropdown,
+                name    = "Font Family",
+                default = ns.GLOBAL_DEFAULTS.fontFace,
+                values  = fontValues,
+                get     = function()
+                    return ns.db.durabilityFontFace or ns.db.fontFace or ns.GLOBAL_DEFAULTS.fontFace
+                end,
+                set     = function(_, v)
+                    ns.db.durabilityFontFace = v
+                    ns.ApplyDurabilityFont(
+                        ns.FindFontPath(v),
+                        ns.db.durabilityFontSize or ns.DURABILITY_DEFAULTS.durabilityFontSize,
+                        ns.db.fontOutline or ns.GLOBAL_DEFAULTS.fontOutline
+                    )
+                end,
+            },
+            {
+                kind      = ST.Slider,
+                name      = "Font Size",
+                default   = 12,
+                minValue  = 8,
+                maxValue  = 24,
+                valueStep = 1,
+                get       = function() return ns.db.durabilityFontSize or ns.DURABILITY_DEFAULTS.durabilityFontSize end,
+                set       = function(_, v)
+                    ns.db.durabilityFontSize = v
+                    ns.ApplyDurabilityFont(
+                        ns.FindFontPath(ns.db.durabilityFontFace or ns.db.fontFace or ns.GLOBAL_DEFAULTS.fontFace),
+                        v,
+                        ns.db.fontOutline or ns.GLOBAL_DEFAULTS.fontOutline
+                    )
+                end,
+                formatter = function(value) return string.format("%d pt", value) end,
+            },
+        })
+
         -- Show placeholder text during Edit Mode
         LibEditMode:RegisterCallback("enter", function()
             ns.ShowDamagePreview()
             ns.ShowStatsPreview()
             ns.ShowDTPSBarPreview()
             ns.ShowSchoolSplitBarPreview()
+            ns.ShowDurabilityPreview()
         end)
 
         LibEditMode:RegisterCallback("exit", function()
@@ -734,6 +832,7 @@ initFrame:SetScript("OnEvent", function()
             ns.HideStatsPreview()
             ns.HideDTPSBarPreview()
             ns.HideSchoolSplitBarPreview()
+            ns.HideDurabilityPreview()
         end)
     end)
 end)

@@ -80,6 +80,7 @@ files['TankBattleText/**'] = {
         'TankBattleTextStatsFrame',
         'TankBattleTextDTPSBar',
         'TankBattleTextSchoolSplitBar',
+        'TankBattleTextDurabilityFrame',
         'TankBattleTextIPBar',
         'CreateUnitHealPredictionCalculator',
         'UnitGetDetailedHealPrediction',
