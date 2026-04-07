@@ -207,7 +207,7 @@ local function TriggerRcRotate()
     UpdateDispatchText()
 end
 
-function ns.OnRaidTimeZero()
+function ns.TriggerRcRotate()
     if rcRotateFired then return end
     rcRotateFired = true
     TriggerRcRotate()

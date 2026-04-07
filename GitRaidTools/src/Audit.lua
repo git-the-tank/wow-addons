@@ -1387,12 +1387,12 @@ function ns.SendAuditReport()
 
     -- Send group summary
     if channel then
-        SendChatMessage("[GRT] Gear audit - enhancement issues:", channel)
+        ns.Announce("[GRT] Gear audit - enhancement issues:", channel)
         for _, entry in ipairs(selected) do
             local shortName = entry.data.shortName or entry.data.name
             local line = shortName .. ": " .. table.concat(entry.issues, ", ")
             if #line > 250 then line = line:sub(1, 247) .. "..." end
-            SendChatMessage(line, channel)
+            ns.Announce(line, channel)
         end
     end
 
@@ -1404,7 +1404,7 @@ function ns.SendAuditReport()
         C_Timer.After(delay, function()
             local msg = "[GRT] Gear check: " .. issueText
             if #msg > 250 then msg = msg:sub(1, 247) .. "..." end
-            SendChatMessage(msg, "WHISPER", nil, whisperName)
+            ns.Announce(msg, "WHISPER", nil, whisperName)
         end)
         delay = delay + 0.3
     end

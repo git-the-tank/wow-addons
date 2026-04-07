@@ -10,6 +10,7 @@ ns.CONFIG = {
     keyword = "inv",
     autoInviteEnabled = false,
     autoInviteMinutes = 15,
+    rcRotateMinutes = 5,
     milestoneAnnounce = false,
     countdownEnabled = true,
     broadcastRaid = false,
@@ -90,6 +91,13 @@ function ns.FormatTimeString(totalSec)
     else
         return string.format("%d %s", s, s == 1 and "second" or "seconds")
     end
+end
+
+-- Single announcement gateway — all outbound chat messages route through here.
+-- Mute check lives here only; callers must not duplicate it.
+function ns.Announce(msg, channel, language, target)
+    if ns.db and ns.db.muted then return end
+    SendChatMessage(msg, channel, language, target)
 end
 
 -- Init

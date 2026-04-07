@@ -113,7 +113,7 @@ local options = {
                     order = 2,
                     name = "Invite Now",
                     type = "execute",
-                    width = "half",
+                    width = "normal",
                     func = function()
                         if ns.RaidTimeInvite then ns.RaidTimeInvite() end
                     end,
@@ -122,7 +122,7 @@ local options = {
                     order = 3,
                     name = "Gear Audit",
                     type = "execute",
-                    width = "half",
+                    width = "normal",
                     func = function()
                         if ns.ToggleAuditWindow then ns.ToggleAuditWindow() end
                     end,
@@ -131,7 +131,7 @@ local options = {
                     order = 4,
                     name = "Move Countdown",
                     type = "execute",
-                    width = "half",
+                    width = "normal",
                     func = function()
                         ShowUIPanel(EditModeManagerFrame) -- luacheck: ignore 113
                     end,
@@ -140,7 +140,7 @@ local options = {
                     order = 5,
                     name = "Test Countdown",
                     type = "execute",
-                    width = "half",
+                    width = "normal",
                     func = function()
                         if ns.testMode then
                             if ns.ExitTestMode then ns.ExitTestMode() end
@@ -439,15 +439,24 @@ local options = {
                 },
                 rcRotateEnabled = {
                     order = 34,
-                    name = "Auto-trigger /rc rotate at raid start",
+                    name = "Auto-trigger /rc rotate before raid",
                     type = "toggle",
                     width = "full",
                     disabled = function()
                         return not C_AddOns.IsAddOnLoaded("RCLootCouncil_CouncilRotation")
                     end,
                 },
-                rcRotateDesc = {
+                rcRotateMinutes = {
                     order = 35,
+                    name = "Minutes before raid",
+                    type = "range",
+                    min = 1, max = 60, step = 1,
+                    disabled = function()
+                        return not ns.db.rcRotateEnabled or not C_AddOns.IsAddOnLoaded("RCLootCouncil_CouncilRotation")
+                    end,
+                },
+                rcRotateDesc = {
+                    order = 36,
                     name = function()
                         if C_AddOns.IsAddOnLoaded("RCLootCouncil_CouncilRotation") then
                             return "|cff00ff00RCLootCouncil_CouncilRotation detected|r"

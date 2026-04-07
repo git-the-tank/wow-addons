@@ -25,12 +25,11 @@ local COLOR_GREEN = { 0.2, 1, 0.2 }
 ------------------------------------------------------------
 local function Broadcast(msg)
     if not ns.db then return end
-    if ns.db.muted then return end
     if ns.db.broadcastRaid then
-        SendChatMessage(msg, "RAID")
+        ns.Announce(msg, "RAID")
     end
     if ns.db.broadcastGuild then
-        SendChatMessage(msg, "GUILD")
+        ns.Announce(msg, "GUILD")
     end
 end
 
@@ -56,6 +55,7 @@ closeBtn:SetPoint("TOPLEFT", 0, 0)
 closeBtn:SetScript("OnClick", function()
     SetDismissed(true)
     ticker:Hide()
+    if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
 end)
 closeBtn:SetScript("OnMouseDown", function(self)
     self:GetNormalTexture():SetVertexColor(0.8, 0.2, 0.2) -- red on press
@@ -175,6 +175,7 @@ broadcastBtn:SetScript("OnClick", function()
         Broadcast(string.format("First pull — started %d:%02d after raid time.", math.floor(overSec / 60), overSec % 60))
         SetDismissed(true)
         ticker:Hide()
+        if ns.EvaluateDispatchVisibility then ns.EvaluateDispatchVisibility() end
     elseif diff > 0 then
         -- Countdown: broadcast only
         Broadcast("COUNTDOWN: First pull in " .. ns.FormatTimeString(diff) .. ".")
@@ -253,7 +254,6 @@ local function EvaluateVisibility()
     -- Persists until manually dismissed — only GetSecondsUntilRaid wraps past OVERTIME_MAX
     if diff <= 0 then
         CheckMilestones(0)
-        if ns.OnRaidTimeZero then ns.OnRaidTimeZero() end
         local overSec = -diff
         SetMode(MODE_OVERTIME)
         tickerText:SetText(string.format("Started %d:%02d", math.floor(overSec / 60), overSec % 60))
@@ -332,7 +332,7 @@ function ns.ExitTestMode()
 end
 
 ------------------------------------------------------------
--- Auto-invite: fires render at configured minutes before raid
+-- Auto-invite: fires at configured minutes before raid
 ------------------------------------------------------------
 local autoInviteFired = false
 
@@ -349,9 +349,31 @@ local function ScheduleAutoInvite()
 
     autoInviteFired = true
     print("|cff00ccffGRT:|r Auto-invite triggered")
-    if ns.RaidTimeRender then
-        ns.RaidTimeRender()
+    if ns.RaidTimeInvite then
+        ns.RaidTimeInvite()
     end
+end
+
+------------------------------------------------------------
+-- RC Rotate: fires at configured minutes before raid
+------------------------------------------------------------
+local rcRotateScheduleFired = false
+
+local function ScheduleRcRotate()
+    if not ns.db or ns.db.rcRotateEnabled == false then return end
+    if rcRotateScheduleFired then return end
+
+    local diff = GetSecondsUntilRaid()
+    local triggerSec = (ns.db.rcRotateMinutes or ns.CONFIG.rcRotateMinutes) * 60
+
+    if diff <= 0 or diff > triggerSec then return end
+
+    rcRotateScheduleFired = true
+    if ns.TriggerRcRotate then ns.TriggerRcRotate() end
+end
+
+local function SeedRcRotateSchedule()
+    rcRotateScheduleFired = ns.db and ns.db.dispatchRcRotated == true
 end
 
 ------------------------------------------------------------
@@ -376,6 +398,7 @@ local function ScheduleNextCheck()
         print("|cff00ccffGRT:|r Already in countdown window — showing now")
         EvaluateVisibility()
         ScheduleAutoInvite()
+        ScheduleRcRotate()
         return
     end
 
@@ -400,6 +423,22 @@ local function ScheduleNextCheck()
             C_Timer.After(inviteDelay, function()
                 if not autoInviteFired then
                     ScheduleAutoInvite()
+                end
+            end)
+        end
+    end
+
+    -- Schedule RC rotate
+    if ns.db and ns.db.rcRotateEnabled ~= false and not rcRotateScheduleFired then
+        local rcTriggerSec = (ns.db.rcRotateMinutes or ns.CONFIG.rcRotateMinutes) * 60
+        if diff > rcTriggerSec then
+            local rcDelay = diff - rcTriggerSec
+            local rcDelayMin = math.floor(rcDelay / 60)
+            local rcDelaySecRem = rcDelay % 60
+            print(string.format("|cff00ccffGRT:|r RC Rotate in %dm %ds", rcDelayMin, rcDelaySecRem))
+            C_Timer.After(rcDelay, function()
+                if not rcRotateScheduleFired then
+                    ScheduleRcRotate()
                 end
             end)
         end
@@ -482,6 +521,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
             SetDismissed(false)
         end
         SeedMilestones()
+        SeedRcRotateSchedule()
         EvaluateVisibility()
         ScheduleNextCheck()
     elseif event == "ZONE_CHANGED_NEW_AREA" then

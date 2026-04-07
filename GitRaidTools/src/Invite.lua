@@ -272,10 +272,6 @@ function ns.RaidTimeRender(arg)
 end
 
 function ns.RaidTimeInvite(arg)
-    if ns.db and ns.db.muted == true then
-        print("|cff00ccffGRT:|r Muted — /grt unmute to enable announcements")
-        return
-    end
     if ns.db and ns.db.invitesEnabled == false then
         print("|cff00ccffGRT:|r Invites are disabled. Enable in /grt config.")
         return
@@ -286,7 +282,7 @@ function ns.RaidTimeInvite(arg)
     local steps = {}
     for _, line in ipairs(lines) do
         local msg = line
-        steps[#steps + 1] = function() SendChatMessage(msg, "GUILD") end
+        steps[#steps + 1] = function() ns.Announce(msg, "GUILD") end
     end
     steps[#steps + 1] = InvokeMRTInvite
     local delay = ns.db and ns.db.inviteDelay or ns.CONFIG.inviteDelay
