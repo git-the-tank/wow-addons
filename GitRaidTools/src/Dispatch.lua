@@ -199,6 +199,9 @@ local function TriggerRcRotate()
     local ok, err = pcall(handler, "rotate")
     if ok then
         print("|cff00ccffGRT:|r RC Rotate triggered")
+        if IsInRaid() and ns.Announce then
+            ns.Announce("[GRT] Loot council rotated for tonight", "RAID")
+        end
     else
         print("|cff00ccffGRT:|r RC Rotate error: " .. tostring(err))
     end

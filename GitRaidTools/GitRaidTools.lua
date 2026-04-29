@@ -98,8 +98,15 @@ end
 
 -- Single announcement gateway — all outbound chat messages route through here.
 -- Mute check lives here only; callers must not duplicate it.
+-- RAID/PARTY are auto-rerouted to INSTANCE_CHAT when the group is an instance
+-- group (cross-realm / Premade Group Finder / LFR) — otherwise the message
+-- silently fails to reach the intended channel.
 function ns.Announce(msg, channel, language, target)
     if ns.db and ns.db.muted then return end
+    if (channel == "RAID" or channel == "PARTY")
+        and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+        channel = "INSTANCE_CHAT"
+    end
     SendChatMessage(msg, channel, language, target)
 end
 
