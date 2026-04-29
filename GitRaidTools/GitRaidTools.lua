@@ -32,6 +32,9 @@ ns.CONFIG = {
     auditReportGroup = true,
     auditReportWhisper = true,
     auditReportGuild = false,
+    luraEnabled = true,
+    luraScale = 100,
+    luraLocked = false,
 }
 
 ------------------------------------------------------------
@@ -169,6 +172,8 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
                 print(string.format("|cff00ccffGRT:|r Raid started %s ago", ns.FormatTimeString(-diff)))
             end
         end
+    elseif cmd == "lura" then
+        ns.ToggleLura()
     elseif cmd == "audit" then
         ns.ToggleAuditWindow()
     elseif cmd == "config" then
@@ -177,6 +182,7 @@ SlashCmdList["GITRAIDTOOLS"] = function(msg)
         end)
     else
         print("|cff00ccffGitRaidTools|r commands:")
+        print("  /grt lura       — Toggle L'ura symbol helper")
         print("  /grt audit      — Open gear audit window")
         print("  /grt config     — Open settings")
         print("  /grt inv [n]    — Send raid invite to guild chat")

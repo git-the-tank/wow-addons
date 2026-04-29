@@ -18,4 +18,5 @@ src\Invite.lua
 src\Dispatch.lua
 src\AuditData.lua
 src\Audit.lua
+src\Lura.lua
 src\Options.lua

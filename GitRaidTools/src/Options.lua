@@ -592,6 +592,50 @@ local options = {
                 },
             },
         },
+        -----------------------------------------------------------------
+        -- Tab 5: L'ura
+        -----------------------------------------------------------------
+        lura = {
+            name = "L'ura",
+            order = 5,
+            type = "group",
+            args = {
+                luraEnabled = {
+                    order = 1,
+                    name = "Enable L'ura Helper",
+                    type = "toggle",
+                    width = "full",
+                    set = SetWith(ns.EvaluateLuraVisibility),
+                },
+                openLura = {
+                    order = 2,
+                    name = "Toggle Panel",
+                    desc = "Also accessible via /grt lura",
+                    type = "execute",
+                    func = function()
+                        if ns.ToggleLura then ns.ToggleLura() end
+                    end,
+                },
+                luraLocked = {
+                    order = 3,
+                    name = "Lock Position",
+                    desc = "Prevent dragging the panel",
+                    type = "toggle",
+                    set = function(info, val)
+                        if ns.db then ns.db[info[#info]] = val end
+                        if ns.UpdateLuraDraggable then ns.UpdateLuraDraggable() end
+                    end,
+                },
+                luraScale = {
+                    order = 10,
+                    name = "Scale",
+                    desc = "Scale the entire panel (100% = default)",
+                    type = "range",
+                    min = 20, max = 300, step = 10,
+                    set = SetWith(ns.ApplyLuraScale),
+                },
+            },
+        },
     },
 }
 
