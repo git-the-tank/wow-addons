@@ -6,10 +6,13 @@ local _, ns = ...
 local CHECK = "|TInterface/RaidFrame/ReadyCheck-Ready:0|t"
 local CROSS = "|TInterface/RaidFrame/ReadyCheck-NotReady:0|t"
 local QUESTION = "|TInterface/RaidFrame/ReadyCheck-Waiting:0|t"
-local SCAN_INTERVAL = 1.5        -- ticker interval (timeout heartbeat)
-local INSPECT_DELAY = 0.8        -- seconds after INSPECT_READY before reading items
+local SCAN_INTERVAL = 1.0        -- ticker interval (timeout heartbeat)
+local INSPECT_DELAY = 0.4        -- seconds after INSPECT_READY before reading items
 local INSPECT_TIMEOUT = 3.0      -- seconds before giving up on an inspect
-local CHAIN_GAP = 0.4            -- seconds between ClearInspectPlayer and next NotifyInspect
+local CHAIN_GAP = 0.2            -- seconds between ClearInspectPlayer and next NotifyInspect
+local THROTTLE_COOLDOWN = 10.0   -- seconds to wait after hitting consecutive timeouts
+local THROTTLE_THRESHOLD = 2     -- consecutive timeouts before triggering cooldown
+local MAX_TIMEOUT_RETRIES = 2    -- auto-retry timed-out inspects this many times
 local MAX_ROWS = 40              -- WoW raid cap
 local ROW_HEIGHT = 18
 local NAME_WIDTH = 105
@@ -27,15 +30,18 @@ local CB_WIDTH = 16
 -- Scan State
 ------------------------------------------------------------
 ns.scan = {
-    active = false,
-    queue = {},         -- ordered list of { name, unit }
-    current = nil,      -- { name, unit, guid, start }
+    enabled = false,         -- user toggled persistent scan mode
+    active = false,          -- ticker is running / processing queue
+    queue = {},              -- ordered list of { name, unit }
+    current = nil,           -- { name, unit, guid, start }
     ticker = nil,
-    count = 0,
-    total = 0,
-    units = {},         -- fullName → unitID
-    paused = false,     -- combat pause
-    retries = {},       -- fullName → retry count
+    count = 0,               -- computed: scanned members of current roster
+    total = 0,               -- computed: total current roster size
+    units = {},              -- fullName → unitID (kept in sync by GROUP_ROSTER_UPDATE)
+    paused = false,          -- combat pause
+    retries = {},            -- fullName → incomplete-data retry count
+    timeoutRetries = {},     -- fullName → inspect-timeout retry count
+    consecutiveTimeouts = 0, -- resets on success; triggers throttle backoff
 }
 
 ns.auditData = {}       -- fullName → scan result
@@ -249,7 +255,6 @@ local function ProcessUnitData(name, unit)
     -- Evaluate with current settings
     ns.EvaluatePlayer(ns.auditData[name])
 
-    scan.count = scan.count + 1
     if ns.UpdateAuditRow then ns.UpdateAuditRow(name) end
     ns.UpdateProgress()
 end
@@ -326,20 +331,40 @@ local function ScanNext()
         if GetTime() - scan.current.start < INSPECT_TIMEOUT then
             return  -- still within timeout window, keep waiting
         end
-        -- Timed out — mark as failed
+        -- Timed out
         local cur = scan.current
-        if ns.auditData[cur.name] then
-            ns.auditData[cur.name].status = "failed"
-        else
-            ns.auditData[cur.name] = {
-                name = cur.name, shortName = ShortName(cur.name),
-                status = "failed",
-            }
-        end
-        scan.count = scan.count + 1
         scan.current = nil
         ClearInspectPlayer()
-        ns.UpdateProgress()
+        scan.consecutiveTimeouts = scan.consecutiveTimeouts + 1
+
+        local timeoutRetries = scan.timeoutRetries[cur.name] or 0
+        if timeoutRetries < MAX_TIMEOUT_RETRIES then
+            -- Re-queue for automatic retry (don't count as done yet)
+            scan.timeoutRetries[cur.name] = timeoutRetries + 1
+            if ns.auditData[cur.name] then
+                ns.auditData[cur.name].status = "pending"
+            end
+            scan.queue[#scan.queue + 1] = { name = cur.name, unit = cur.unit }
+            if ns.UpdateAuditRow then ns.UpdateAuditRow(cur.name) end
+        else
+            -- Exhausted retries — mark permanently failed
+            if ns.auditData[cur.name] then
+                ns.auditData[cur.name].status = "failed"
+            else
+                ns.auditData[cur.name] = {
+                    name = cur.name, shortName = ShortName(cur.name),
+                    status = "failed",
+                }
+            end
+            ns.UpdateProgress()
+        end
+
+        -- Throttle backoff: pause after hitting consecutive timeout threshold
+        if scan.consecutiveTimeouts >= THROTTLE_THRESHOLD then
+            scan.consecutiveTimeouts = 0
+            C_Timer.After(THROTTLE_COOLDOWN, ScanNext)
+            return
+        end
     end
 
     -- Find next pending
@@ -351,7 +376,6 @@ local function ScanNext()
             -- Player left
             if not ns.auditData[name] then
                 ns.auditData[name] = { name = name, shortName = ShortName(name), status = "failed" }
-                scan.count = scan.count + 1
             end
             ns.UpdateProgress()
         elseif UnitIsUnit(unit, "player") then
@@ -365,7 +389,6 @@ local function ScanNext()
                     name = name, shortName = ShortName(name),
                     class = ClassToken(unit), status = "failed",
                 }
-                scan.count = scan.count + 1
             end
             ns.UpdateProgress()
         else
@@ -396,6 +419,7 @@ local function OnInspectReady(guid)
     local name = scan.current.name
     local unit = scan.current.unit
     scan.current = nil
+    scan.consecutiveTimeouts = 0  -- successful response; reset throttle counter
 
     -- Delay slightly for item data to fully populate
     C_Timer.After(INSPECT_DELAY, function()
@@ -405,7 +429,6 @@ local function OnInspectReady(guid)
             -- Unit gone or swapped
             if not ns.auditData[name] then
                 ns.auditData[name] = { name = name, shortName = ShortName(name), status = "failed" }
-                scan.count = scan.count + 1
                 ns.UpdateProgress()
             end
         end
@@ -419,66 +442,90 @@ end
 -- Scan Control
 ------------------------------------------------------------
 
-function ns.StartAuditScan()
-    -- Reset scan state
+local function RebuildRosterUnits()
     local scan = ns.scan
-    if scan.ticker then scan.ticker:Cancel() end
-    wipe(scan.queue)
     wipe(scan.units)
-    scan.current = nil
-    scan.count = 0
-    scan.active = true
-    scan.paused = false
-    wipe(ns.auditData)
-    wipe(ns.auditSelected)
-    wipe(scan.retries)
-
-    -- Build roster
+    local myName = FullName("player")
+    if myName then scan.units[myName] = "player" end
     local inRaid = IsInRaid()
     local count = GetNumGroupMembers()
-
-    -- Always scan self first
-    local myName = FullName("player")
-    if myName then
-        scan.units[myName] = "player"
-        scan.queue[#scan.queue + 1] = { name = myName, unit = "player" }
-    end
-
     for i = 1, count do
         local unit = inRaid and ("raid" .. i) or ("party" .. i)
         if UnitExists(unit) and not UnitIsUnit(unit, "player") then
             local name = FullName(unit)
-            if name and not scan.units[name] then
-                scan.units[name] = unit
-                scan.queue[#scan.queue + 1] = { name = name, unit = unit }
-            end
+            if name then scan.units[name] = unit end
         end
     end
+end
 
-    scan.total = #scan.queue
-    ns.UpdateProgress()
-
-    -- Show window if not already visible
-    if ns.ShowAuditWindow then ns.ShowAuditWindow() end
-
-    -- Seed rows for all pending players
-    for _, entry in ipairs(scan.queue) do
-        local unit = entry.unit
-        if not ns.auditData[entry.name] then
-            ns.auditData[entry.name] = {
-                name = entry.name,
-                shortName = ShortName(entry.name),
+local function SeedRosterPlaceholders()
+    for name, unit in pairs(ns.scan.units) do
+        if not ns.auditData[name] then
+            ns.auditData[name] = {
+                name = name,
+                shortName = ShortName(name),
                 class = UnitExists(unit) and ClassToken(unit) or nil,
                 status = "pending",
             }
         end
     end
-    if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+end
 
-    -- Start the ticker
+local function QueueUnscannedMembers()
+    local scan = ns.scan
+    local inQueue = {}
+    for _, entry in ipairs(scan.queue) do inQueue[entry.name] = true end
+    if scan.current then inQueue[scan.current.name] = true end
+    for name, unit in pairs(scan.units) do
+        local data = ns.auditData[name]
+        if (not data or data.status == "pending" or data.status == "failed")
+           and not inQueue[name] then
+            if data and data.status == "failed" then
+                data.status = "pending"
+            end
+            scan.queue[#scan.queue + 1] = { name = name, unit = unit }
+        end
+    end
+end
+
+local function StartScanTicker()
+    local scan = ns.scan
+    if scan.active then return end
+    scan.active = true
+    scan.paused = InCombatLockdown()
     scan.ticker = C_Timer.NewTicker(SCAN_INTERVAL, ScanNext)
-    -- Process first entry immediately
     ScanNext()
+end
+
+local function UpdateScanButton()
+    if not ns._scanBtn then return end
+    ns._scanBtn:SetText(ns.scan.enabled and "Stop" or "Scan")
+end
+
+function ns.EnableScan()
+    local scan = ns.scan
+    if scan.enabled then return end
+    scan.enabled = true
+    wipe(scan.retries)
+    wipe(scan.timeoutRetries)
+    scan.consecutiveTimeouts = 0
+    RebuildRosterUnits()
+    SeedRosterPlaceholders()
+    QueueUnscannedMembers()
+    UpdateScanButton()
+    ns.UpdateProgress()
+    if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+    if #scan.queue > 0 then StartScanTicker() end
+end
+
+function ns.DisableScan()
+    local scan = ns.scan
+    if not scan.enabled then return end
+    scan.enabled = false
+    wipe(scan.queue)
+    -- Let any in-flight inspect complete; ScanNext will stop when it sees empty queue
+    UpdateScanButton()
+    ns.UpdateProgress()
 end
 
 ------------------------------------------------------------
@@ -504,17 +551,12 @@ function ns.RescanPlayer(name)
 
     -- Append to queue
     scan.queue[#scan.queue + 1] = { name = name, unit = unit }
-    scan.total = scan.total + 1
+    scan.timeoutRetries[name] = nil
     ns.UpdateProgress()
     if ns.RefreshAuditUI then ns.RefreshAuditUI() end
 
-    -- If no scan is running, start a ticker to process the queue
-    if not scan.active or not scan.ticker then
-        scan.active = true
-        scan.paused = false
-        scan.ticker = C_Timer.NewTicker(SCAN_INTERVAL, ScanNext)
-        ScanNext()
-    end
+    -- Start ticker if not already running
+    StartScanTicker()
 end
 
 ------------------------------------------------------------
@@ -524,11 +566,16 @@ local combatFrame = CreateFrame("Frame")
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 combatFrame:SetScript("OnEvent", function(_, event)
-    if not ns.scan.active then return end
+    local scan = ns.scan
+    if not scan.active and not scan.enabled then return end
     if event == "PLAYER_REGEN_DISABLED" then
-        ns.scan.paused = true
+        scan.paused = true
     elseif event == "PLAYER_REGEN_ENABLED" then
-        ns.scan.paused = false
+        scan.paused = false
+        -- Resume if enabled and there's queued work
+        if scan.enabled and #scan.queue > 0 and not scan.active then
+            StartScanTicker()
+        end
     end
 end)
 
@@ -540,6 +587,24 @@ inspectFrame:RegisterEvent("INSPECT_READY")
 inspectFrame:SetScript("OnEvent", function(_, _, guid)
     OnInspectReady(guid)
 end)
+
+------------------------------------------------------------
+-- Group Roster Tracking
+------------------------------------------------------------
+local function OnGroupRosterUpdate()
+    RebuildRosterUnits()
+    SeedRosterPlaceholders()
+    if ns.scan.enabled then
+        QueueUnscannedMembers()
+        if #ns.scan.queue > 0 then StartScanTicker() end
+    end
+    ns.UpdateProgress()
+    if ns.RefreshAuditUI then ns.RefreshAuditUI() end
+end
+
+local rosterFrame = CreateFrame("Frame")
+rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+rosterFrame:SetScript("OnEvent", function() OnGroupRosterUpdate() end)
 
 ------------------------------------------------------------
 -- UI: Main Frame
@@ -596,12 +661,15 @@ local function CreateAuditFrame()
     controlBar:SetPoint("TOPRIGHT", -8, -24)
     controlBar:SetHeight(26)
 
-    -- Scan button
+    -- Scan toggle button
     local scanBtn = CreateFrame("Button", nil, controlBar, "UIPanelButtonTemplate")
     scanBtn:SetPoint("LEFT", 0, 0)
     scanBtn:SetSize(60, 22)
     scanBtn:SetText("Scan")
-    scanBtn:SetScript("OnClick", function() ns.StartAuditScan() end)
+    scanBtn:SetScript("OnClick", function()
+        if ns.scan.enabled then ns.DisableScan() else ns.EnableScan() end
+    end)
+    ns._scanBtn = scanBtn
 
     -- Report button
     local reportBtn = CreateFrame("Button", nil, controlBar, "UIPanelButtonTemplate")
@@ -1222,10 +1290,11 @@ end
 -- UI: Refresh (full rebuild)
 ------------------------------------------------------------
 
-local function SortedEntries()
+local function RosterEntries()
     local entries = {}
-    for _, data in pairs(ns.auditData) do
-        entries[#entries + 1] = data
+    for name in pairs(ns.scan.units) do
+        local data = ns.auditData[name]
+        if data then entries[#entries + 1] = data end
     end
     table.sort(entries, function(a, b)
         -- Scanned first, then failed, then pending
@@ -1270,7 +1339,7 @@ function ns.RefreshAuditUI()
     RenderHeaders(activeCols)
 
     local renderFn = RENDER_FNS[activeMode]
-    local entries = SortedEntries()
+    local entries = RosterEntries()
     local rowH = MODE_ROW_HEIGHT[activeMode] or ROW_HEIGHT
 
     -- Compute needed frame width
@@ -1316,15 +1385,31 @@ end
 function ns.UpdateProgress()
     if not ns._progressText then return end
     local scan = ns.scan
-    if not scan.active then
-        if scan.total > 0 then
-            ns._progressText:SetText(string.format("Complete (%d/%d)", scan.count, scan.total))
+
+    -- Compute scanned/total from current roster
+    local total, scanned = 0, 0
+    for name in pairs(scan.units) do
+        total = total + 1
+        local data = ns.auditData[name]
+        if data and data.status == "scanned" then
+            scanned = scanned + 1
+        end
+    end
+    scan.count = scanned
+    scan.total = total
+
+    if not scan.enabled then
+        if total > 0 then
+            ns._progressText:SetText(string.format("%d/%d scanned", scanned, total))
         else
-            ns._progressText:SetText("Idle")
+            ns._progressText:SetText("")
         end
     else
-        local status = scan.paused and "Paused" or "Scanning"
-        ns._progressText:SetText(string.format("%s... %d/%d", status, scan.count, scan.total))
+        local label
+        if scan.paused then label = "Paused"
+        elseif scan.active and #scan.queue > 0 then label = "Scanning"
+        else label = "On" end
+        ns._progressText:SetText(string.format("%s  %d/%d", label, scanned, total))
     end
 end
 
@@ -1418,8 +1503,12 @@ end
 
 function ns.ShowAuditWindow()
     CreateAuditFrame()
+    RebuildRosterUnits()
+    SeedRosterPlaceholders()
+    UpdateScanButton()
+    ns.UpdateProgress()
     auditFrame:Show()
-    if activeCols then ns.RefreshAuditUI() end
+    ns.RefreshAuditUI()
 end
 
 function ns.ToggleAuditWindow()
@@ -1428,10 +1517,6 @@ function ns.ToggleAuditWindow()
         auditFrame:Hide()
     else
         ns.ShowAuditWindow()
-        -- Auto-scan if no data
-        if not next(ns.auditData) then
-            ns.StartAuditScan()
-        end
     end
 end
 
